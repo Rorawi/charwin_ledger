@@ -16,6 +16,11 @@ const plusJakarta = Plus_Jakarta_Sans({
 export const metadata = {
   title: "Charwin Ledger",
   description: "A beautiful, personal ledger for clothing line credit and inventory.",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "Charwin Ledger",
+  },
 };
 
 export const viewport = {
@@ -23,8 +28,8 @@ export const viewport = {
   initialScale: 1,
   maximumScale: 1,
   userScalable: false,
+  themeColor: "#1A1816",
 };
-
 
 export default function RootLayout({ children }) {
   return (
@@ -32,9 +37,24 @@ export default function RootLayout({ children }) {
       lang="en"
       className={`${playfair.variable} ${plusJakarta.variable} h-full antialiased`}
     >
+      <head>
+        <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+      </head>
       <body className="min-h-full bg-[#FAF8F5] text-[#1A1816] font-sans flex flex-col">
         {children}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              if ('serviceWorker' in navigator) {
+                window.addEventListener('load', function() {
+                  navigator.serviceWorker.register('/sw.js', { scope: '/' });
+                });
+              }
+            `,
+          }}
+        />
       </body>
     </html>
   );
 }
+
