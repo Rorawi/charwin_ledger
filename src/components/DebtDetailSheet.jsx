@@ -2,11 +2,13 @@
 
 import { useState } from "react";
 import { X, Phone, DollarSign, Calendar, FileText, Trash2, CheckCircle } from "lucide-react";
+import ConfirmModal from "./ConfirmModal";
 
 export default function DebtDetailSheet({ debt, onClose, onAddPayment, onSettle, onDelete }) {
   const [paymentAmount, setPaymentAmount] = useState("");
   const [paymentNote, setPaymentNote] = useState("");
   const [showPaymentForm, setShowPaymentForm] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   if (!debt) return null;
 
@@ -273,12 +275,7 @@ export default function DebtDetailSheet({ debt, onClose, onAddPayment, onSettle,
             </span>
             <button
               type="button"
-              onClick={() => {
-                if (window.confirm("Are you sure you want to delete this debt record completely? This will clear it from history.")) {
-                  onDelete(debt.id);
-                  onClose();
-                }
-              }}
+              onClick={() => setShowDeleteConfirm(true)}
               className="text-red-700 hover:text-red-800 text-xs font-semibold font-sans flex items-center gap-1 transition-colors cursor-pointer"
             >
               <Trash2 className="w-3.5 h-3.5" />
@@ -287,6 +284,19 @@ export default function DebtDetailSheet({ debt, onClose, onAddPayment, onSettle,
           </div>
         </div>
       </div>
+
+      {/* Confirm Delete Modal */}
+      <ConfirmModal
+        isOpen={showDeleteConfirm}
+        title="Delete this record?"
+        message="This debt record will be permanently removed from the ledger. This action cannot be undone."
+        confirmLabel="Delete"
+        onConfirm={() => {
+          onDelete(debt.id);
+          onClose();
+        }}
+        onCancel={() => setShowDeleteConfirm(false)}
+      />
     </div>
   );
 }
