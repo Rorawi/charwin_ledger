@@ -1,0 +1,46 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: var(--font-plus-jakarta), system-ui, -apple-system, sans-serif;
+  --font-serif: var(--font-playfair), Georgia, serif;
+  
+  --color-brand-charcoal: #1A1816;
+  --color-brand-rust: #B85A38;
+  --color-brand-cream: #FAF8F5;
+  --color-brand-paper: #FFFDFB;
+  --color-brand-clay: #7D756C;
+  --color-brand-sage: #8E9A82;
+}
+
+body {
+  font-family: var(--font-plus-jakarta), system-ui, -apple-system, sans-serif;
+  background-color: #FAF8F5;
+  color: #1A1816;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior-y: contain;
+}
+
+/* Custom scrollbars for ledger style */
+::-webkit-scrollbar {
+  width: 4px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #E6E1DA;
+  border-radius: 2px;
+}
+
+@keyframes slideUp {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+.animate-slide-up {
+  animation: slideUp 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
