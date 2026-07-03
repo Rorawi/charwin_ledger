@@ -14,11 +14,11 @@ export default function AddDebtForm({ inventory, onClose, onSubmit }) {
     return `${yyyy}-${mm}-${dd}`;
   });
   const [notes, setNotes] = useState("");
-  
+
   const [items, setItems] = useState([
     { inventoryId: "", name: "", quantity: 1, price: 0 }
   ]);
-  
+
   const [customTotal, setCustomTotal] = useState("");
 
   const handleAddItemRow = () => {
@@ -68,7 +68,7 @@ export default function AddDebtForm({ inventory, onClose, onSubmit }) {
     if (!name.trim()) return;
 
     const validItems = items.filter(item => item.name.trim() !== "");
-    
+
     onSubmit({
       name: name.trim(),
       phone: phone.trim(),
@@ -244,7 +244,7 @@ export default function AddDebtForm({ inventory, onClose, onSubmit }) {
                           />
                         </div>
                         <div>
-                          <label className="text-[10px] text-brand-clay font-sans block mb-0.5">Price/Unit ($)</label>
+                          <label className="text-[10px] text-brand-clay font-sans block mb-0.5">Price/Unit (₵)</label>
                           <input
                             type="number"
                             min="0"
@@ -258,7 +258,7 @@ export default function AddDebtForm({ inventory, onClose, onSubmit }) {
                         <div className="text-right flex flex-col justify-end pb-1.5">
                           <span className="text-[10px] text-brand-clay font-sans block mb-1">Total</span>
                           <span className="text-xs font-serif font-bold text-brand-charcoal pr-1">
-                            ${(item.quantity * item.price).toLocaleString()}
+                            ₵{(item.quantity * item.price).toLocaleString()}
                           </span>
                         </div>
                       </div>
@@ -281,7 +281,7 @@ export default function AddDebtForm({ inventory, onClose, onSubmit }) {
                   Calculated Subtotal
                 </span>
                 <span className="text-base font-serif font-bold text-brand-charcoal">
-                  ${autoSubtotal.toLocaleString()}
+                  ₵{autoSubtotal.toLocaleString()}
                 </span>
               </div>
 
@@ -293,7 +293,7 @@ export default function AddDebtForm({ inventory, onClose, onSubmit }) {
                   <span className="absolute left-3 top-2.5 text-sm text-brand-clay font-sans">$</span>
                   <input
                     type="number"
-                    placeholder={`Keep blank to charge subtotal ($${autoSubtotal})`}
+                    placeholder={`Keep blank to charge subtotal (₵${autoSubtotal})`}
                     value={customTotal}
                     onChange={(e) => setCustomTotal(e.target.value)}
                     min="0"
@@ -328,7 +328,7 @@ export default function AddDebtForm({ inventory, onClose, onSubmit }) {
               type="submit"
               className="w-full bg-brand-charcoal hover:bg-[#2A2622] text-white font-semibold py-3.5 rounded-xl text-xs uppercase tracking-wider font-sans transition-colors cursor-pointer"
             >
-              Submit Debt Record (${finalTotal.toLocaleString()})
+              Submit Debt Record (₵{finalTotal.toLocaleString()})
             </button>
           </div>
         </form>
