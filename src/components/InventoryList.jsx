@@ -52,15 +52,14 @@ export default function InventoryList({ inventory, onRestockClick, onDeleteItem 
                 </div>
               </div>
 
-              <div className="flex items-center gap-3 shrink-0">
+              <div className="flex flex-col items-center gap-4 shrink-0">
                 <div className="text-right">
-                  <span className={`text-xs font-semibold font-sans px-2.5 py-1 rounded-full border ${
-                    isOutOfStock
-                      ? "bg-[#FAF1EE] text-brand-rust border-[#F2DDD7]"
-                      : isLowStock
-                        ? "bg-[#FAF7EE] text-amber-800 border-[#F2ECD7]"
-                        : "bg-[#F0F3EE] text-brand-sage border-[#E0E8DC]"
-                  }`}>
+                  <span className={`text-xs font-semibold font-sans px-2.5 py-1 rounded-full border ${isOutOfStock
+                    ? "bg-[#FAF1EE] text-brand-rust border-[#F2DDD7]"
+                    : isLowStock
+                      ? "bg-[#FAF7EE] text-amber-800 border-[#F2ECD7]"
+                      : "bg-[#F0F3EE] text-brand-sage border-[#E0E8DC]"
+                    }`}>
                     {isOutOfStock ? "Out of Stock" : `${item.quantity} in stock`}
                   </span>
                 </div>
