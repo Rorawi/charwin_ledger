@@ -6,6 +6,7 @@ import { Check, Phone, FileText } from "lucide-react";
 export default function SwipeableDebtItem({ debt, onSettle, onTap }) {
   const [translation, setTranslation] = useState(0);
   const [isSwipedOpen, setIsSwipedOpen] = useState(false);
+  const [isDraggingState, setIsDraggingState] = useState(false);
   
   const startX = useRef(0);
   const startY = useRef(0);
@@ -22,6 +23,7 @@ export default function SwipeableDebtItem({ debt, onSettle, onTap }) {
     startY.current = touch.clientY;
     currentTranslation.current = translation;
     isDragging.current = true;
+    setIsDraggingState(true);
     isHorizontalScroll.current = null;
   };
 
@@ -58,6 +60,7 @@ export default function SwipeableDebtItem({ debt, onSettle, onTap }) {
   const handleTouchEnd = () => {
     if (!isDragging.current) return;
     isDragging.current = false;
+    setIsDraggingState(false);
 
     if (translation < THRESHOLD) {
       setTranslation(SWIPE_LIMIT);
@@ -103,7 +106,8 @@ export default function SwipeableDebtItem({ debt, onSettle, onTap }) {
   }, [isSwipedOpen]);
 
   const isPartiallyPaid = debt.payments && debt.payments.length > 0;
-  const originalAmount = debt.originalOwed || debt.amountOwed;
+  const latestPurchase = debt.purchases?.slice().sort((a, b) => new Date(b.date) - new Date(a.date))[0];
+  const purchaseCount = debt.purchases?.length || 0;
   
   return (
     <div className="relative overflow-hidden rounded-xl mb-3 select-none touch-pan-y bg-brand-cream border border-[#ECE6DD]">
@@ -129,7 +133,7 @@ export default function SwipeableDebtItem({ debt, onSettle, onTap }) {
         onTouchEnd={handleTouchEnd}
         style={{
           transform: `translateX(${translation}px)`,
-          transition: isDragging.current ? "none" : "transform 0.25s cubic-bezier(0.16, 1, 0.3, 1)",
+          transition: isDraggingState ? "none" : "transform 0.25s cubic-bezier(0.16, 1, 0.3, 1)",
         }}
         className="relative bg-brand-paper p-4 flex justify-between items-center cursor-pointer select-none active:bg-[#FAF9F7]"
       >
@@ -145,7 +149,12 @@ export default function SwipeableDebtItem({ debt, onSettle, onTap }) {
             )}
           </div>
           <p className="text-sm text-brand-clay truncate font-sans">
-            {debt.itemsSummary || (debt.items && debt.items.map(i => `${i.quantity}x ${i.name}`).join(", ")) || "Clothing items"}
+            {latestPurchase
+              ? `${purchaseCount} ${purchaseCount === 1 ? "purchase" : "purchases"} • ${latestPurchase.items
+                  .slice(0, 2)
+                  .map((item) => `${item.quantity}x ${item.name}`)
+                  .join(", ")}`
+              : "Customer ledger profile"}
           </p>
           {debt.notes && (
             <div className="flex items-center gap-1 mt-1 text-[11px] text-brand-clay/80 font-sans italic truncate">
@@ -165,6 +174,11 @@ export default function SwipeableDebtItem({ debt, onSettle, onTap }) {
           {isPartiallyPaid && (
             <span className="text-[10px] text-brand-rust font-sans mt-1 bg-[#FAF1EE] px-1.5 py-0.5 rounded-full border border-[#F2DDD7]">
               Part Paid
+            </span>
+          )}
+          {latestPurchase?.discountAmount > 0 && (
+            <span className="text-[10px] text-brand-clay font-sans mt-1">
+              Discounted transaction
             </span>
           )}
         </div>

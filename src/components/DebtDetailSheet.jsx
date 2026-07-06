@@ -1,28 +1,30 @@
 "use client";
 
-import { useState } from "react";
-import { X, Phone, DollarSign, Calendar, FileText, Trash2, CheckCircle } from "lucide-react";
+import { useMemo, useState } from "react";
+import {
+  X,
+  Phone,
+  DollarSign,
+  Calendar,
+  Trash2,
+  CheckCircle,
+} from "lucide-react";
 import ConfirmModal from "./ConfirmModal";
 
-export default function DebtDetailSheet({ debt, onClose, onAddPayment, onSettle, onDelete }) {
+export default function DebtDetailSheet({ debt, onClose, onAddPayment, onSettle, onDelete, formatCurrency }) {
   const [paymentAmount, setPaymentAmount] = useState("");
   const [paymentNote, setPaymentNote] = useState("");
   const [showPaymentForm, setShowPaymentForm] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [targetTransactionId, setTargetTransactionId] = useState("total");
+  const [paymentType, setPaymentType] = useState("payment");
 
-  if (!debt) return null;
-
-  const formatCurrency = (amount) => {
-    return "₵" + new Intl.NumberFormat("en-GH", {
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0,
-    }).format(amount);
-  };
+  const currency = formatCurrency || ((amount) => `₵${new Intl.NumberFormat("en-GH", { maximumFractionDigits: 0 }).format(amount)}`);
 
   const formatDate = (dateStr) => {
     if (!dateStr) return "";
-    const d = new Date(dateStr);
-    return d.toLocaleDateString("en-US", {
+    const date = new Date(dateStr);
+    return date.toLocaleDateString("en-US", {
       weekday: "long",
       year: "numeric",
       month: "long",
@@ -30,35 +32,55 @@ export default function DebtDetailSheet({ debt, onClose, onAddPayment, onSettle,
     });
   };
 
-  const handlePaymentSubmit = (e) => {
-    e.preventDefault();
-    const amt = parseFloat(paymentAmount);
-    if (isNaN(amt) || amt <= 0) return;
-    onAddPayment(debt.id, amt, paymentNote);
+  const activeTransactions = useMemo(
+    () => (debt?.purchases || []).filter((purchase) => purchase.remainingAmount > 0),
+    [debt]
+  );
+
+  const totalInvoiced = (debt?.purchases || []).reduce((sum, purchase) => sum + purchase.finalAmount, 0);
+  const totalPaid = (debt?.purchases || []).reduce((sum, purchase) => sum + purchase.paidAmount, 0);
+  const isSettled = debt?.status === "settled";
+
+  const maxAllowed = useMemo(() => {
+    if (targetTransactionId === "total") return debt.amountOwed;
+    const target = (debt?.purchases || []).find((purchase) => purchase.id === targetTransactionId);
+    return target ? target.remainingAmount : debt?.amountOwed || 0;
+  }, [debt, targetTransactionId]);
+
+  if (!debt) return null;
+
+  const handlePaymentSubmit = (event) => {
+    event.preventDefault();
+    const parsedAmount = parseFloat(paymentAmount);
+    if (Number.isNaN(parsedAmount) || parsedAmount <= 0) return;
+
+    onAddPayment(
+      debt.id,
+      Math.min(parsedAmount, maxAllowed),
+      paymentNote,
+      targetTransactionId === "total" ? null : targetTransactionId,
+      paymentType
+    );
+
     setPaymentAmount("");
     setPaymentNote("");
     setShowPaymentForm(false);
+    setTargetTransactionId("total");
+    setPaymentType("payment");
   };
-
-  const originalAmount = debt.originalOwed || debt.amountOwed;
-  const isSettled = debt.status === "settled";
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center">
-      {/* Backdrop overlay */}
       <div
         className="absolute inset-0 bg-[#1A1816]/40 backdrop-blur-xs transition-opacity duration-300"
         onClick={onClose}
       />
 
-      {/* Slide-up Container */}
-      <div className="relative w-full max-w-md bg-brand-paper rounded-t-2xl shadow-2xl z-10 overflow-hidden animate-slide-up flex flex-col max-h-[85vh] border-t border-[#ECE6DD]">
-        {/* Tactile drag indicator pill */}
+      <div className="relative w-full max-w-md bg-brand-paper rounded-t-2xl shadow-2xl z-10 overflow-hidden animate-slide-up flex flex-col max-h-[90vh] border-t border-[#ECE6DD]">
         <div className="w-full flex justify-center py-3 shrink-0">
           <div className="w-12 h-1.5 rounded-full bg-[#E6E1DA]" />
         </div>
 
-        {/* Close Button */}
         <button
           type="button"
           onClick={onClose}
@@ -67,17 +89,15 @@ export default function DebtDetailSheet({ debt, onClose, onAddPayment, onSettle,
           <X className="w-5 h-5" />
         </button>
 
-        {/* Scrollable Inner Panel */}
         <div className="px-6 pb-8 overflow-y-auto flex-1">
-          {/* Header */}
           <div className="mb-6">
             <span className="text-[10px] uppercase tracking-widest font-semibold text-brand-rust font-sans block mb-1">
-              {isSettled ? "Settled Record" : "Outstanding Debt"}
+              {isSettled ? "Settled Profile" : "Customer Profile"}
             </span>
             <h2 className="font-serif font-bold text-2xl text-brand-charcoal pr-8 mb-2 leading-tight">
               {debt.name}
             </h2>
-            
+
             {debt.phone && (
               <a
                 href={`tel:${debt.phone}`}
@@ -89,120 +109,227 @@ export default function DebtDetailSheet({ debt, onClose, onAddPayment, onSettle,
             )}
           </div>
 
-          {/* Balance Breakdown Grid */}
-          <div className="grid grid-cols-2 gap-3 mb-6">
+          <div className="grid grid-cols-3 gap-3 mb-6">
             <div className="bg-brand-cream p-4 rounded-xl border border-[#ECE6DD]">
               <span className="text-[10px] uppercase tracking-wider font-semibold text-brand-clay block mb-1">
                 Outstanding
               </span>
-              <span className="text-2xl font-serif font-bold text-brand-charcoal">
-                {formatCurrency(debt.amountOwed)}
+              <span className="text-lg font-serif font-bold text-brand-charcoal">
+                {currency(debt.amountOwed)}
               </span>
             </div>
             <div className="bg-brand-cream p-4 rounded-xl border border-[#ECE6DD]">
               <span className="text-[10px] uppercase tracking-wider font-semibold text-brand-clay block mb-1">
-                Original Debt
+                Invoiced
               </span>
               <span className="text-lg font-serif font-semibold text-brand-clay">
-                {formatCurrency(originalAmount)}
+                {currency(totalInvoiced)}
+              </span>
+            </div>
+            <div className="bg-brand-cream p-4 rounded-xl border border-[#ECE6DD]">
+              <span className="text-[10px] uppercase tracking-wider font-semibold text-brand-clay block mb-1">
+                Collected
+              </span>
+              <span className="text-lg font-serif font-semibold text-brand-sage">
+                {currency(totalPaid)}
               </span>
             </div>
           </div>
 
-          {/* Items & Log Details */}
           <div className="space-y-5">
             <div className="border-t border-[#ECE6DD] pt-4">
               <h4 className="text-xs uppercase tracking-wider font-semibold text-brand-clay mb-2 font-sans">
-                Items Taken
+                Purchase History
               </h4>
-              {debt.items && debt.items.length > 0 ? (
-                <ul className="space-y-2">
-                  {debt.items.map((item, idx) => (
-                    <li key={idx} className="flex justify-between items-center text-sm font-sans text-brand-charcoal">
-                      <span>
-                        {item.quantity}x <span className="font-medium">{item.name}</span>
-                      </span>
-                      {item.price ? (
-                        <span className="text-brand-clay">
-                          @ {formatCurrency(item.price)}
-                        </span>
-                      ) : null}
-                    </li>
+              {debt.purchases.length > 0 ? (
+                <div className="space-y-3">
+                  {debt.purchases.map((purchase) => (
+                    <div key={purchase.id} className="bg-brand-cream p-3.5 rounded-xl border border-[#ECE6DD]">
+                      <div className="flex justify-between items-start gap-2 mb-2">
+                        <div>
+                          <p className="text-sm font-semibold text-brand-charcoal font-sans">
+                            {new Date(purchase.date).toLocaleDateString("en-US", {
+                              month: "short",
+                              day: "numeric",
+                              year: "numeric",
+                            })}
+                          </p>
+                          <p className="text-[11px] text-brand-clay font-sans capitalize">
+                            {purchase.status === "paid"
+                              ? "Paid"
+                              : purchase.status === "partial"
+                                ? "Partially paid"
+                                : "Unpaid"}
+                          </p>
+                        </div>
+                        <div className="text-right">
+                          {purchase.discountAmount > 0 ? (
+                            <div className="text-xs font-sans">
+                              <span className="text-brand-clay line-through mr-1">
+                                {currency(purchase.autoSubtotal)}
+                              </span>
+                              <span className="text-brand-charcoal font-semibold">
+                                {currency(purchase.finalAmount)}
+                              </span>
+                              <span className="block text-[10px] text-brand-clay mt-0.5">
+                                Discounted ({purchase.discountPercent.toFixed(1)}%)
+                              </span>
+                            </div>
+                          ) : (
+                            <span className="text-sm font-serif font-semibold text-brand-charcoal">
+                              {currency(purchase.finalAmount)}
+                            </span>
+                          )}
+                          {purchase.remainingAmount > 0 && (
+                            <p className="text-[10px] text-brand-rust mt-1">
+                              Remaining {currency(purchase.remainingAmount)}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+
+                      <ul className="space-y-1.5">
+                        {purchase.items.map((item, index) => (
+                          <li
+                            key={`${purchase.id}-${index}`}
+                            className="flex justify-between items-center text-xs text-brand-charcoal font-sans"
+                          >
+                            <span>
+                              {item.quantity}x {item.name}
+                              <span className="text-brand-clay ml-1">({item.category || "Uncategorized"})</span>
+                            </span>
+                            <span>{currency((item.quantity || 0) * (item.price || 0))}</span>
+                          </li>
+                        ))}
+                      </ul>
+
+                      {purchase.notes && (
+                        <p className="text-[11px] text-brand-clay font-sans italic mt-2">&ldquo;{purchase.notes}&rdquo;</p>
+                      )}
+                    </div>
                   ))}
-                </ul>
+                </div>
               ) : (
-                <p className="text-sm font-sans text-brand-charcoal">
-                  {debt.itemsSummary || "Clothing items"}
-                </p>
+                <p className="text-sm font-sans text-brand-charcoal">No purchases found.</p>
               )}
             </div>
 
-            <div className="border-t border-[#ECE6DD] pt-4 flex gap-2.5 items-start">
-              <Calendar className="w-4 h-4 text-brand-clay mt-0.5 shrink-0" />
-              <div>
-                <span className="text-xs uppercase tracking-wider font-semibold text-brand-clay block font-sans mb-0.5">
-                  Date Logged
-                </span>
-                <span className="text-sm text-brand-charcoal font-sans">
-                  {formatDate(debt.date)}
-                </span>
-              </div>
-            </div>
-
-            {debt.notes && (
-              <div className="border-t border-[#ECE6DD] pt-4 flex gap-2.5 items-start">
-                <FileText className="w-4 h-4 text-brand-clay mt-0.5 shrink-0" />
-                <div>
-                  <span className="text-xs uppercase tracking-wider font-semibold text-brand-clay block font-sans mb-0.5">
-                    Notes
-                  </span>
-                  <p className="text-sm text-brand-charcoal font-sans whitespace-pre-line italic">
-                    &ldquo;{debt.notes}&rdquo;
-                  </p>
-                </div>
-              </div>
-            )}
-
-            {/* Payment logs history */}
-            {debt.payments && debt.payments.length > 0 && (
+            {debt.fullHistory.length > 0 && (
               <div className="border-t border-[#ECE6DD] pt-4">
                 <h4 className="text-xs uppercase tracking-wider font-semibold text-brand-clay mb-2.5 font-sans">
-                  Payment History
+                  Running History
                 </h4>
                 <div className="space-y-2">
-                  {debt.payments.map((p, idx) => (
+                  {debt.fullHistory.map((entry) => (
                     <div
-                      key={idx}
+                      key={entry.id}
                       className="flex justify-between items-start text-xs bg-brand-cream/60 p-3 rounded-lg border border-[#F2ECE4] font-sans"
                     >
-                      <div>
-                        <span className="font-semibold text-brand-charcoal">
-                          Paid {formatCurrency(p.amount)}
-                        </span>
-                        {p.notes && (
-                          <p className="text-brand-clay mt-1 italic">
-                            &ldquo;{p.notes}&rdquo;
-                          </p>
-                        )}
-                      </div>
-                      <span className="text-[10px] text-brand-clay shrink-0 ml-2">
-                        {new Date(p.date).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
-                      </span>
+                      {entry.kind === "purchase" ? (
+                        <>
+                          <div>
+                            <span className="font-semibold text-brand-charcoal">
+                              Purchase • {currency(entry.purchase.finalAmount)}
+                            </span>
+                            {entry.purchase.discountAmount > 0 && (
+                              <p className="text-brand-clay mt-0.5">
+                                <span className="line-through mr-1">{currency(entry.purchase.autoSubtotal)}</span>
+                                Discounted
+                              </p>
+                            )}
+                          </div>
+                          <span className="text-[10px] text-brand-clay shrink-0 ml-2">
+                            {new Date(entry.date).toLocaleDateString("en-US", {
+                              month: "short",
+                              day: "numeric",
+                            })}
+                          </span>
+                        </>
+                      ) : (
+                        <>
+                          <div>
+                            <span className="font-semibold text-brand-charcoal">
+                              {entry.kind === "writeoff" ? "Write-off" : "Payment"} • {currency(entry.payment.amount)}
+                            </span>
+                            {entry.payment.notes && (
+                              <p className="text-brand-clay mt-1 italic">&ldquo;{entry.payment.notes}&rdquo;</p>
+                            )}
+                          </div>
+                          <span className="text-[10px] text-brand-clay shrink-0 ml-2">
+                            {new Date(entry.date).toLocaleDateString("en-US", {
+                              month: "short",
+                              day: "numeric",
+                            })}
+                          </span>
+                        </>
+                      )}
                     </div>
                   ))}
                 </div>
               </div>
             )}
+
+            {debt.purchases.length > 0 && (
+              <div className="border-t border-[#ECE6DD] pt-4 flex gap-2.5 items-start">
+                <Calendar className="w-4 h-4 text-brand-clay mt-0.5 shrink-0" />
+                <div>
+                  <span className="text-xs uppercase tracking-wider font-semibold text-brand-clay block font-sans mb-0.5">
+                    First Purchase Date
+                  </span>
+                  <span className="text-sm text-brand-charcoal font-sans">
+                    {formatDate(debt.purchases.slice().sort((a, b) => new Date(a.date) - new Date(b.date))[0].date)}
+                  </span>
+                </div>
+              </div>
+            )}
           </div>
 
-          {/* Payment Recording / Settling Form */}
           {!isSettled && (
             <div className="space-y-3 mt-8 pt-4 border-t border-[#ECE6DD]">
               {showPaymentForm ? (
                 <form onSubmit={handlePaymentSubmit} className="bg-brand-cream p-4 rounded-xl border border-[#ECE6DD] space-y-3">
                   <h4 className="text-xs uppercase tracking-wider font-semibold text-brand-charcoal font-sans">
-                    Record Payment Amount
+                    Record Payment / Write-off
                   </h4>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setPaymentType("payment")}
+                      className={`text-xs py-2 rounded-lg border font-semibold font-sans cursor-pointer ${
+                        paymentType === "payment"
+                          ? "bg-brand-paper text-brand-charcoal border-brand-rust"
+                          : "text-brand-clay border-[#ECE6DD]"
+                      }`}
+                    >
+                      Payment
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPaymentType("writeoff")}
+                      className={`text-xs py-2 rounded-lg border font-semibold font-sans cursor-pointer ${
+                        paymentType === "writeoff"
+                          ? "bg-brand-paper text-brand-charcoal border-brand-rust"
+                          : "text-brand-clay border-[#ECE6DD]"
+                      }`}
+                    >
+                      Write-off
+                    </button>
+                  </div>
+
+                  <select
+                    value={targetTransactionId}
+                    onChange={(e) => setTargetTransactionId(e.target.value)}
+                    className="w-full bg-brand-paper text-xs text-brand-charcoal rounded-lg border border-[#ECE6DD] py-2 px-2.5 focus:outline-none focus:border-brand-rust font-sans cursor-pointer"
+                  >
+                    <option value="total">Apply to total outstanding</option>
+                    {activeTransactions.map((purchase) => (
+                      <option key={purchase.id} value={purchase.id}>
+                        {new Date(purchase.date).toLocaleDateString("en-US", { month: "short", day: "numeric" })} • Remaining {currency(purchase.remainingAmount)}
+                      </option>
+                    ))}
+                  </select>
+
                   <div className="flex gap-2">
                     <div className="relative flex-1">
                       <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none text-brand-clay text-sm font-sans">
@@ -213,7 +340,7 @@ export default function DebtDetailSheet({ debt, onClose, onAddPayment, onSettle,
                         placeholder="0.00"
                         value={paymentAmount}
                         onChange={(e) => setPaymentAmount(e.target.value)}
-                        max={debt.amountOwed}
+                        max={maxAllowed}
                         min="1"
                         step="any"
                         required
@@ -227,13 +354,15 @@ export default function DebtDetailSheet({ debt, onClose, onAddPayment, onSettle,
                       Save
                     </button>
                   </div>
+
                   <input
                     type="text"
-                    placeholder="Payment method / notes (e.g. Cash, Zelle)"
+                    placeholder="Note (optional)"
                     value={paymentNote}
                     onChange={(e) => setPaymentNote(e.target.value)}
                     className="w-full bg-brand-paper text-xs text-brand-charcoal rounded-lg border border-[#ECE6DD] py-2.5 px-3 focus:outline-none focus:border-brand-rust font-sans"
                   />
+
                   <button
                     type="button"
                     onClick={() => setShowPaymentForm(false)}
@@ -250,7 +379,7 @@ export default function DebtDetailSheet({ debt, onClose, onAddPayment, onSettle,
                     className="flex-1 border border-brand-rust text-brand-rust hover:bg-[#B85A38]/5 py-3 rounded-xl text-xs font-semibold uppercase tracking-wider font-sans transition-colors flex justify-center items-center gap-1.5 cursor-pointer"
                   >
                     <DollarSign className="w-4 h-4" />
-                    <span>Record Payment</span>
+                    <span>Record Entry</span>
                   </button>
                   <button
                     type="button"
@@ -261,17 +390,16 @@ export default function DebtDetailSheet({ debt, onClose, onAddPayment, onSettle,
                     className="flex-1 bg-brand-rust hover:bg-brand-rust/95 text-white py-3 rounded-xl text-xs font-semibold uppercase tracking-wider font-sans transition-colors flex justify-center items-center gap-1.5 cursor-pointer"
                   >
                     <CheckCircle className="w-4 h-4" />
-                    <span>Settle Entirely</span>
+                    <span>Settle All</span>
                   </button>
                 </div>
               )}
             </div>
           )}
 
-          {/* Delete Record Button */}
           <div className="mt-8 pt-4 border-t border-[#ECE6DD] flex justify-between items-center">
             <span className="text-[10px] text-brand-clay/50 font-sans">
-              ID: {debt.id.slice(0, 8)}
+              Customer ID: {debt.id.slice(0, 8)}
             </span>
             <button
               type="button"
@@ -279,17 +407,16 @@ export default function DebtDetailSheet({ debt, onClose, onAddPayment, onSettle,
               className="text-red-700 hover:text-red-800 text-xs font-semibold font-sans flex items-center gap-1 transition-colors cursor-pointer"
             >
               <Trash2 className="w-3.5 h-3.5" />
-              <span>Delete Record</span>
+              <span>Delete Profile</span>
             </button>
           </div>
         </div>
       </div>
 
-      {/* Confirm Delete Modal */}
       <ConfirmModal
         isOpen={showDeleteConfirm}
-        title="Delete this record?"
-        message="This debt record will be permanently removed from the ledger. This action cannot be undone."
+        title="Delete this profile?"
+        message="This customer profile and all linked history will be permanently removed from the ledger."
         confirmLabel="Delete"
         onConfirm={() => {
           onDelete(debt.id);

@@ -1,24 +1,17 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { X, ArrowUpRight, Package } from "lucide-react";
 
 export default function RestockSheet({ inventory, prefilledItemId, onClose, onSubmit }) {
   const [isNewItem, setIsNewItem] = useState(false);
-  const [selectedItemId, setSelectedItemId] = useState("");
+  const [selectedItemId, setSelectedItemId] = useState(prefilledItemId || "");
   const [newItemName, setNewItemName] = useState("");
   const [newItemPrice, setNewItemPrice] = useState("");
   const [newItemCost, setNewItemCost] = useState("");
+  const [newItemCategory, setNewItemCategory] = useState("");
+  const [newLowThreshold, setNewLowThreshold] = useState("5");
   const [quantityToAdd, setQuantityToAdd] = useState("");
-
-  useEffect(() => {
-    if (prefilledItemId) {
-      setSelectedItemId(prefilledItemId);
-      setIsNewItem(false);
-    } else {
-      setSelectedItemId("");
-    }
-  }, [prefilledItemId]);
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -32,6 +25,8 @@ export default function RestockSheet({ inventory, prefilledItemId, onClose, onSu
         name: newItemName.trim(),
         price: parseFloat(newItemPrice) || 0,
         cost: parseFloat(newItemCost) || 0,
+        category: newItemCategory.trim() || "Uncategorized",
+        lowThreshold: parseInt(newLowThreshold, 10) || 5,
         quantity: qty,
       });
     } else {
@@ -46,6 +41,8 @@ export default function RestockSheet({ inventory, prefilledItemId, onClose, onSu
     setNewItemName("");
     setNewItemPrice("");
     setNewItemCost("");
+    setNewItemCategory("");
+    setNewLowThreshold("5");
     setQuantityToAdd("");
     onClose();
   };
@@ -158,7 +155,7 @@ export default function RestockSheet({ inventory, prefilledItemId, onClose, onSu
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="text-xs uppercase tracking-wider font-semibold text-brand-clay block mb-1.5 font-sans">
-                      Retail Price / Unit ($)
+                      Retail Price / Unit (₵)
                     </label>
                     <input
                       type="number"
@@ -172,7 +169,7 @@ export default function RestockSheet({ inventory, prefilledItemId, onClose, onSu
                   </div>
                   <div>
                     <label className="text-xs uppercase tracking-wider font-semibold text-brand-clay block mb-1.5 font-sans">
-                      Cost per Unit ($)
+                      Cost per Unit (₵)
                     </label>
                     <input
                       type="number"
@@ -181,6 +178,33 @@ export default function RestockSheet({ inventory, prefilledItemId, onClose, onSu
                       step="any"
                       value={newItemCost}
                       onChange={(e) => setNewItemCost(e.target.value)}
+                      className="w-full bg-brand-cream text-sm text-brand-charcoal rounded-xl border border-[#ECE6DD] py-2.5 px-4 focus:outline-none focus:border-brand-rust font-sans"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs uppercase tracking-wider font-semibold text-brand-clay block mb-1.5 font-sans">
+                      Category
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. T-Shirts - Male"
+                      value={newItemCategory}
+                      onChange={(e) => setNewItemCategory(e.target.value)}
+                      className="w-full bg-brand-cream text-sm text-brand-charcoal rounded-xl border border-[#ECE6DD] py-2.5 px-4 focus:outline-none focus:border-brand-rust font-sans"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs uppercase tracking-wider font-semibold text-brand-clay block mb-1.5 font-sans">
+                      Low Stock Threshold
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={newLowThreshold}
+                      onChange={(e) => setNewLowThreshold(e.target.value)}
                       className="w-full bg-brand-cream text-sm text-brand-charcoal rounded-xl border border-[#ECE6DD] py-2.5 px-4 focus:outline-none focus:border-brand-rust font-sans"
                     />
                   </div>

@@ -1,9 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { X, Plus, Trash2, Calendar, User, Phone, Clipboard } from "lucide-react";
 
-export default function AddDebtForm({ inventory, onClose, onSubmit }) {
+export default function AddDebtForm({ inventory, customerNames = [], onClose, onSubmit }) {
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [date, setDate] = useState(() => {
@@ -16,18 +16,18 @@ export default function AddDebtForm({ inventory, onClose, onSubmit }) {
   const [notes, setNotes] = useState("");
 
   const [items, setItems] = useState([
-    { inventoryId: "", name: "", quantity: 1, price: 0 }
+    { inventoryId: "", name: "", quantity: 1, price: 0, category: "", costAtSale: 0 }
   ]);
 
   const [customTotal, setCustomTotal] = useState("");
 
   const handleAddItemRow = () => {
-    setItems([...items, { inventoryId: "", name: "", quantity: 1, price: 0 }]);
+    setItems([...items, { inventoryId: "", name: "", quantity: 1, price: 0, category: "", costAtSale: 0 }]);
   };
 
   const handleRemoveItemRow = (index) => {
     if (items.length === 1) {
-      setItems([{ inventoryId: "", name: "", quantity: 1, price: 0 }]);
+      setItems([{ inventoryId: "", name: "", quantity: 1, price: 0, category: "", costAtSale: 0 }]);
     } else {
       setItems(items.filter((_, idx) => idx !== index));
     }
@@ -42,32 +42,64 @@ export default function AddDebtForm({ inventory, onClose, onSubmit }) {
       if (value === "custom") {
         item.name = "";
         item.price = 0;
+        item.category = "";
+        item.costAtSale = 0;
       } else {
         const selectedInv = inventory.find(inv => inv.id === value);
         if (selectedInv) {
           item.name = selectedInv.name;
           item.price = selectedInv.price || 0;
+          item.category = selectedInv.category || "Uncategorized";
+          item.costAtSale = selectedInv.cost || 0;
         }
       }
     } else if (field === "name") {
       item.name = value;
+    } else if (field === "category") {
+      item.category = value;
     } else if (field === "quantity") {
       item.quantity = parseInt(value, 10) || 0;
     } else if (field === "price") {
       item.price = parseFloat(value) || 0;
+    } else if (field === "costAtSale") {
+      item.costAtSale = parseFloat(value) || 0;
     }
 
     setItems(newItems);
   };
 
   const autoSubtotal = items.reduce((sum, item) => sum + (item.quantity * item.price), 0);
-  const finalTotal = customTotal !== "" ? parseFloat(customTotal) : autoSubtotal;
+  const finalTotal = customTotal !== "" ? parseFloat(customTotal) || 0 : autoSubtotal;
+  const discountAmount = Math.max(0, autoSubtotal - finalTotal);
+  const discountPercent = autoSubtotal > 0 ? (discountAmount / autoSubtotal) * 100 : 0;
+  const categoryHints = useMemo(() => {
+    return Array.from(
+      new Set(
+        inventory
+          .map((item) => item.category)
+          .filter((category) => typeof category === "string" && category.trim() !== "")
+      )
+    );
+  }, [inventory]);
 
   const handleSubmit = (e) => {
     e.preventDefault();
     if (!name.trim()) return;
 
-    const validItems = items.filter(item => item.name.trim() !== "");
+    const validItems = items
+      .filter(item => item.name.trim() !== "")
+      .map((item) => {
+        const selectedInv = inventory.find((inv) => inv.id === item.inventoryId);
+        return {
+          ...item,
+          category: item.inventoryId === "custom"
+            ? item.category || "Uncategorized"
+            : selectedInv?.category || "Uncategorized",
+          costAtSale: item.inventoryId === "custom"
+            ? parseFloat(item.costAtSale) || 0
+            : parseFloat(selectedInv?.cost) || 0,
+        };
+      });
 
     onSubmit({
       name: name.trim(),
@@ -76,6 +108,9 @@ export default function AddDebtForm({ inventory, onClose, onSubmit }) {
       items: validItems,
       amountOwed: finalTotal,
       originalOwed: finalTotal,
+      autoSubtotal,
+      discountAmount,
+      discountPercent,
       notes: notes.trim(),
     });
   };
@@ -125,6 +160,7 @@ export default function AddDebtForm({ inventory, onClose, onSubmit }) {
               <div className="relative">
                 <User className="absolute left-3 top-3 w-4 h-4 text-brand-clay/60" />
                 <input
+                  list="customer-name-suggestions"
                   type="text"
                   placeholder="e.g. Sarah Jenkins"
                   value={name}
@@ -132,6 +168,11 @@ export default function AddDebtForm({ inventory, onClose, onSubmit }) {
                   required
                   className="w-full bg-brand-cream text-sm text-brand-charcoal rounded-xl border border-[#ECE6DD] py-2.5 pl-10 pr-4 focus:outline-none focus:border-brand-rust font-sans"
                 />
+                <datalist id="customer-name-suggestions">
+                  {customerNames.map((customerName) => (
+                    <option key={customerName} value={customerName} />
+                  ))}
+                </datalist>
               </div>
             </div>
 
@@ -221,14 +262,29 @@ export default function AddDebtForm({ inventory, onClose, onSubmit }) {
                       </div>
 
                       {item.inventoryId === "custom" && (
-                        <input
-                          type="text"
-                          placeholder="Custom Item Name (e.g. Alteration Work)"
-                          value={item.name}
-                          onChange={(e) => handleItemFieldChange(idx, "name", e.target.value)}
-                          required
-                          className="w-full bg-brand-paper text-xs text-brand-charcoal rounded-lg border border-[#ECE6DD] py-2 px-2.5 focus:outline-none focus:border-brand-rust font-sans"
-                        />
+                        <div className="grid grid-cols-2 gap-2">
+                          <input
+                            type="text"
+                            placeholder="Custom Item Name"
+                            value={item.name}
+                            onChange={(e) => handleItemFieldChange(idx, "name", e.target.value)}
+                            required
+                            className="w-full bg-brand-paper text-xs text-brand-charcoal rounded-lg border border-[#ECE6DD] py-2 px-2.5 focus:outline-none focus:border-brand-rust font-sans"
+                          />
+                          <input
+                            list="category-hints"
+                            type="text"
+                            placeholder="Category"
+                            value={item.category || ""}
+                            onChange={(e) => handleItemFieldChange(idx, "category", e.target.value)}
+                            className="w-full bg-brand-paper text-xs text-brand-charcoal rounded-lg border border-[#ECE6DD] py-2 px-2.5 focus:outline-none focus:border-brand-rust font-sans"
+                          />
+                          <datalist id="category-hints">
+                            {categoryHints.map((categoryHint) => (
+                              <option key={categoryHint} value={categoryHint} />
+                            ))}
+                          </datalist>
+                        </div>
                       )}
 
                       <div className="grid grid-cols-3 gap-2">
@@ -255,6 +311,19 @@ export default function AddDebtForm({ inventory, onClose, onSubmit }) {
                             className="w-full bg-brand-paper text-xs text-brand-charcoal rounded-lg border border-[#ECE6DD] py-1.5 px-2 focus:outline-none focus:border-brand-rust font-sans"
                           />
                         </div>
+                        {item.inventoryId === "custom" && (
+                          <div>
+                            <label className="text-[10px] text-brand-clay font-sans block mb-0.5">Cost/Unit (₵)</label>
+                            <input
+                              type="number"
+                              min="0"
+                              step="any"
+                              value={item.costAtSale || ""}
+                              onChange={(e) => handleItemFieldChange(idx, "costAtSale", e.target.value)}
+                              className="w-full bg-brand-paper text-xs text-brand-charcoal rounded-lg border border-[#ECE6DD] py-1.5 px-2 focus:outline-none focus:border-brand-rust font-sans"
+                            />
+                          </div>
+                        )}
                         <div className="text-right flex flex-col justify-end pb-1.5">
                           <span className="text-[10px] text-brand-clay font-sans block mb-1">Total</span>
                           <span className="text-xs font-serif font-bold text-brand-charcoal pr-1">
@@ -290,7 +359,7 @@ export default function AddDebtForm({ inventory, onClose, onSubmit }) {
                   Final Amount Owed (Override if discounted)
                 </label>
                 <div className="relative">
-                  <span className="absolute left-3 top-2.5 text-sm text-brand-clay font-sans">$</span>
+                  <span className="absolute left-3 top-2.5 text-sm text-brand-clay font-sans">₵</span>
                   <input
                     type="number"
                     placeholder={`Keep blank to charge subtotal (₵${autoSubtotal})`}
@@ -302,6 +371,14 @@ export default function AddDebtForm({ inventory, onClose, onSubmit }) {
                   />
                 </div>
               </div>
+
+              {discountAmount > 0 && (
+                <div className="text-[11px] text-brand-clay font-sans bg-brand-paper border border-[#ECE6DD] rounded-lg px-3 py-2">
+                  <span className="line-through mr-1">₵{autoSubtotal.toLocaleString()}</span>
+                  <span className="text-brand-charcoal font-semibold">₵{finalTotal.toLocaleString()}</span>
+                  <span className="ml-2 text-brand-rust">Discounted ({discountPercent.toFixed(1)}%)</span>
+                </div>
+              )}
             </div>
 
             {/* Notes */}
