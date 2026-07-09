@@ -1,8 +1,8 @@
 export default function manifest() {
   return {
-    name: "Charwin Ledger",
-    short_name: "Charwin",
-    description: "A personal ledger for clothing line credit and inventory.",
+    name: "Thread Ledger",
+    short_name: "Ledger",
+    description: "A personal ledger for clothing line credit, inventory, and content planning.",
     start_url: "/",
     display: "standalone",
     orientation: "portrait",

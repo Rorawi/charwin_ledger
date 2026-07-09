@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "../lib/supabase";
 import SwipeableDebtItem from "../components/SwipeableDebtItem";
 import DebtDetailSheet from "../components/DebtDetailSheet";
@@ -8,7 +8,8 @@ import AddDebtForm from "../components/AddDebtForm";
 import InventoryList from "../components/InventoryList";
 import RestockSheet from "../components/RestockSheet";
 import ExpenseSheet from "../components/ExpenseSheet";
-import SummaryView from "../components/SummaryView";
+import ProfileDrawer from "../components/ProfileDrawer";
+import ReminderBanner from "../components/ReminderBanner";
 import {
   Search,
   Plus,
@@ -16,17 +17,36 @@ import {
   BookOpen,
   AlertCircle,
   Receipt,
-  ScrollText,
   Wallet,
+  User,
 } from "lucide-react";
+import { loadSettings, updateSettings, shouldShowReminder } from "../lib/settings";
+import { deriveNotifications, syncSettingsToDb } from "../lib/notifications";
+import {
+  isPushSupported,
+  subscribeToPush,
+  unsubscribeFromPush,
+  requestPushPermission,
+} from "../lib/pushNotifications";
 
 function toKey(name) {
   return (name || "").trim().toLowerCase();
 }
 
 function parsePayments(payments) {
+  const inputType = typeof payments;
+  const inputIsArray = Array.isArray(payments);
+  
+  if (typeof payments === "string") {
+    try {
+      payments = JSON.parse(payments);
+    } catch (e) {
+      return [];
+    }
+  }
   if (!Array.isArray(payments)) return [];
-  return payments.map((payment, index) => ({
+  
+  const result = payments.map((payment, index) => ({
     id: payment.id || `pay-${Date.now()}-${index}`,
     amount: Number(payment.amount) || 0,
     date: payment.date || new Date().toISOString(),
@@ -34,10 +54,21 @@ function parsePayments(payments) {
     targetTransactionId: payment.targetTransactionId || null,
     type: payment.type === "writeoff" ? "writeoff" : "payment",
   }));
+  
+  return result;
 }
 
 function parsePurchases(row) {
-  const raw = Array.isArray(row.items) ? row.items : [];
+  let raw = Array.isArray(row.items) ? row.items : [];
+  
+  // Handle items stored as JSON string
+  if (typeof row.items === "string") {
+    try {
+      raw = JSON.parse(row.items);
+    } catch (e) {
+      raw = [];
+    }
+  }
 
   if (
     raw.length > 0 &&
@@ -221,6 +252,20 @@ function profileToDbRow(profile) {
 
   const lifetimeInvoiced = profile.purchases.reduce((sum, purchase) => sum + purchase.finalAmount, 0);
 
+  const items = profile.purchases.map((purchase) => ({
+    id: purchase.id,
+    date: purchase.date,
+    notes: purchase.notes || "",
+    autoSubtotal: purchase.autoSubtotal,
+    finalAmount: purchase.finalAmount,
+    discountAmount: purchase.discountAmount,
+    discountPercent: purchase.discountPercent,
+    items: purchase.items,
+  }));
+
+  const paymentsJson = JSON.stringify(profile.payments);
+  const itemsJson = JSON.stringify(items);
+
   return {
     name: profile.name,
     phone: profile.phone || "",
@@ -229,17 +274,8 @@ function profileToDbRow(profile) {
     original_owed: lifetimeInvoiced,
     notes: "",
     status: profile.status,
-    items: profile.purchases.map((purchase) => ({
-      id: purchase.id,
-      date: purchase.date,
-      notes: purchase.notes || "",
-      autoSubtotal: purchase.autoSubtotal,
-      finalAmount: purchase.finalAmount,
-      discountAmount: purchase.discountAmount,
-      discountPercent: purchase.discountPercent,
-      items: purchase.items,
-    })),
-    payments: profile.payments,
+    items: itemsJson,
+    payments: paymentsJson,
   };
 }
 
@@ -247,21 +283,59 @@ export default function Home() {
   const [customerProfiles, setCustomerProfiles] = useState([]);
   const [inventory, setInventory] = useState([]);
   const [expenses, setExpenses] = useState([]);
+  const [calendarEntries, setCalendarEntries] = useState([]);
 
   const [isDebtsLoaded, setIsDebtsLoaded] = useState(false);
   const [isInventoryLoaded, setIsInventoryLoaded] = useState(false);
   const [isExpensesLoaded, setIsExpensesLoaded] = useState(false);
+  const [isCalendarLoaded, setIsCalendarLoaded] = useState(false);
   const [dbError, setDbError] = useState(null);
 
-  const [activeTab, setActiveTab] = useState("ledger"); // ledger | inventory | expenses | summary
+  const [activeTab, setActiveTab] = useState("ledger"); // ledger | inventory | expenses
   const [ledgerSubTab, setLedgerSubTab] = useState("active");
   const [searchQuery, setSearchQuery] = useState("");
+
+  const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [profileSection, setProfileSection] = useState(null);
+  const [calendarFilterUnposted, setCalendarFilterUnposted] = useState(false);
+  const [settings, setSettings] = useState(loadSettings);
+  const [showReminderBanner, setShowReminderBanner] = useState(false);
+  const [pushPermission, setPushPermission] = useState("default");
 
   const [activeDetailDebt, setActiveDetailDebt] = useState(null);
   const [isAddDebtOpen, setIsAddDebtOpen] = useState(false);
   const [isRestockOpen, setIsRestockOpen] = useState(false);
   const [isExpenseOpen, setIsExpenseOpen] = useState(false);
   const [prefilledRestockId, setPrefilledRestockId] = useState(null);
+
+  useEffect(() => {
+    if (typeof window !== "undefined" && "Notification" in window) {
+      setPushPermission(Notification.permission);
+    }
+  }, []);
+
+  useEffect(() => {
+    setSettings((prev) => updateSettings({ sessionInteractionCount: prev.sessionInteractionCount + 1 }));
+  }, [activeTab]);
+
+  const handleUpdateSettings = useCallback((partial) => {
+    setSettings((prev) => {
+      const next = updateSettings({ ...prev, ...partial });
+      syncSettingsToDb(next);
+      return next;
+    });
+  }, []);
+
+  const openProfileSection = useCallback((section, unpostedOnly = false) => {
+    setProfileSection(section);
+    setCalendarFilterUnposted(unpostedOnly);
+    setIsProfileOpen(true);
+    setShowReminderBanner(false);
+  }, []);
+
+  const navigateToUnposted = useCallback(() => {
+    openProfileSection("calendar", true);
+  }, [openProfileSection]);
 
   useEffect(() => {
     async function loadData() {
@@ -302,34 +376,52 @@ export default function Home() {
 
       const merged = new Map();
       for (const row of debtData || []) {
-        const profileFromRow = recalculateProfile({
+        const parsedPayments = parsePayments(row.payments);
+        const parsedPurchases = parsePurchases(row);
+        
+        let profileFromRow;
+        const baseProfile = {
           id: row.id,
           name: row.name,
           phone: row.phone,
-          purchases: parsePurchases(row),
-          payments: parsePayments(row.payments),
+          purchases: parsedPurchases,
+          payments: parsedPayments,
           amountOwed: Number(row.amount_owed) || 0,
           status: row.status === "settled" ? "settled" : "active",
-        });
+        };
 
-        const key = toKey(profileFromRow.name);
+        const key = toKey(baseProfile.name);
         if (!key) continue;
 
         if (!merged.has(key)) {
-          merged.set(key, profileFromRow);
+          // First occurrence - preserve DB status
+          if (key === "gideon") console.log(`[LOAD] First Gideon: status=${baseProfile.status}, purchases=${baseProfile.purchases.length}, payments=${baseProfile.payments.length}`);
+          merged.set(key, baseProfile);
           continue;
         }
 
+        // There's a duplicate - must merge
         const existing = merged.get(key);
-        merged.set(
-          key,
-          recalculateProfile({
-            ...existing,
-            phone: existing.phone || profileFromRow.phone,
-            purchases: [...existing.purchases, ...profileFromRow.purchases],
-            payments: [...existing.payments, ...profileFromRow.payments],
-          })
-        );
+        if (key === "gideon") console.log(`[LOAD] Merging Gideon: existing.status=${existing.status}, new.status=${baseProfile.status}`);
+        
+        const mergedProfile = {
+          ...existing,
+          phone: existing.phone || baseProfile.phone,
+          purchases: [...existing.purchases, ...baseProfile.purchases],
+          payments: [...existing.payments, ...baseProfile.payments],
+        };
+
+        profileFromRow = recalculateProfile(mergedProfile);
+        
+        // CRITICAL FIX: If both source records were settled, keep merged as settled
+        if (existing.status === "settled" && baseProfile.status === "settled") {
+          if (key === "gideon") console.log(`[LOAD] Both settled! Forcing merged to settled`);
+          profileFromRow.status = "settled";
+          profileFromRow.amountOwed = 0;
+        }
+        
+        if (key === "gideon") console.log(`[LOAD] Merged result: status=${profileFromRow.status}, amountOwed=${profileFromRow.amountOwed}`);
+        merged.set(key, profileFromRow);
       }
 
       setCustomerProfiles(
@@ -351,14 +443,46 @@ export default function Home() {
         setExpenses(expData || []);
       }
       setIsExpensesLoaded(true);
+
+      const { data: calData, error: calError } = await supabase
+        .from("calendar_entries")
+        .select("*")
+        .order("target_date", { ascending: true });
+
+      if (calError) {
+        setCalendarEntries([]);
+      } else {
+        setCalendarEntries(calData || []);
+      }
+      setIsCalendarLoaded(true);
     }
 
     loadData();
   }, []);
 
   const saveProfileToDb = async (profile) => {
-    const payload = profileToDbRow(profile);
-    await supabase.from("debts").update(payload).eq("id", profile.id);
+    // CRITICAL FIX: Update all records with consolidated state INCLUDING payments
+    // This ensures when records merge on load, they have complete payment info
+    // Even though purchases might be duplicated, payments will be present for recalculation
+    const payload = {
+      status: profile.status,
+      amount_owed: profile.amountOwed,
+      payments: JSON.stringify(profile.payments), // Include payments so merge recalculation works
+    };
+    
+    console.log(`[SAVE] ${profile.name}: status=${payload.status}, amount_owed=${payload.amount_owed}, paymentCount=${profile.payments.length}`);
+    
+    // Update ALL records with this customer name
+    const { error } = await supabase
+      .from("debts")
+      .update(payload)
+      .eq("name", profile.name);
+    
+    if (error) {
+      console.error(`ERROR updating ${profile.name}:`, error.message);
+    } else {
+      console.log(`✓ Updated all records for ${profile.name}`);
+    }
   };
 
   const formatCurrency = (amount) => {
@@ -530,6 +654,94 @@ export default function Home() {
     return [...rows.values()];
   }, [customerProfiles, inventory]);
 
+
+  const unpostedContentCount = useMemo(() => {
+    return calendarEntries.filter((e) => e.entry_type === "content" && e.status === "needs_posting").length;
+  }, [calendarEntries]);
+
+  useEffect(() => {
+    setShowReminderBanner(shouldShowReminder(settings, unpostedContentCount));
+  }, [settings, unpostedContentCount]);
+
+  const appNotifications = useMemo(() => {
+    return deriveNotifications({
+      calendarEntries,
+      customerProfiles,
+      inventory,
+      settings,
+      formatCurrency,
+      onNavigateToUnposted: navigateToUnposted,
+    });
+  }, [calendarEntries, customerProfiles, inventory, settings, navigateToUnposted]);
+
+  const handleEnablePush = async () => {
+    const permission = await requestPushPermission();
+    setPushPermission(permission);
+    if (permission === "granted") {
+      await subscribeToPush();
+      handleUpdateSettings({ pushEnabled: true, pushPermissionRequested: true });
+    } else {
+      handleUpdateSettings({ pushPermissionRequested: true });
+    }
+  };
+
+  const handleDisablePush = async () => {
+    await unsubscribeFromPush();
+    handleUpdateSettings({ pushEnabled: false });
+  };
+
+  const createContentPlanForProduct = async (product) => {
+    const payload = {
+      entry_type: "content",
+      inventory_id: product.id,
+      title: product.name,
+      notes: "",
+      target_date: new Date().toISOString().slice(0, 10),
+      platforms: ["instagram"],
+      status: "needs_posting",
+      posted_platforms: [],
+    };
+
+    const tempId = `temp-cal-${Date.now()}`;
+    setCalendarEntries((prev) => [...prev, { ...payload, id: tempId, created_at: new Date().toISOString() }]);
+
+    const { data } = await supabase.from("calendar_entries").insert(payload).select().single();
+    if (data) {
+      setCalendarEntries((prev) => prev.map((e) => (e.id === tempId ? data : e)));
+    }
+  };
+
+  const handleAddCalendarEntry = async (entryData) => {
+    const tempId = `temp-cal-${Date.now()}`;
+    const optimistic = { ...entryData, id: tempId, created_at: new Date().toISOString(), posted_platforms: [] };
+    setCalendarEntries((prev) => [...prev, optimistic]);
+
+    const { data } = await supabase.from("calendar_entries").insert({
+      ...entryData,
+      posted_platforms: [],
+    }).select().single();
+
+    if (data) {
+      setCalendarEntries((prev) => prev.map((e) => (e.id === tempId ? data : e)));
+    }
+  };
+
+  const handleUpdateCalendarEntry = async (id, entryData) => {
+    setCalendarEntries((prev) => prev.map((e) => (e.id === id ? { ...e, ...entryData } : e)));
+    await supabase.from("calendar_entries").update(entryData).eq("id", id);
+  };
+
+  const handleDeleteCalendarEntry = async (id) => {
+    setCalendarEntries((prev) => prev.filter((e) => e.id !== id));
+    await supabase.from("calendar_entries").delete().eq("id", id);
+  };
+
+  const handleMarkPosted = async (id, postedPlatforms) => {
+    const updates = { status: "posted", posted_platforms: postedPlatforms };
+    setCalendarEntries((prev) => prev.map((e) => (e.id === id ? { ...e, ...updates } : e)));
+    await supabase.from("calendar_entries").update(updates).eq("id", id);
+  };
+
   const handleAddDebt = async (newRecord) => {
     const purchase = {
       id: `tx-${Date.now()}`,
@@ -691,6 +903,7 @@ export default function Home() {
         setInventory((prevInventory) =>
           prevInventory.map((item) => (item.id === tempId ? dbInv : item))
         );
+        await createContentPlanForProduct(dbInv);
       }
     } else {
       let newQuantity = 0;
@@ -763,7 +976,7 @@ export default function Home() {
     );
   }
 
-  if (!isDebtsLoaded || !isInventoryLoaded || !isExpensesLoaded) {
+  if (!isDebtsLoaded || !isInventoryLoaded || !isExpensesLoaded || !isCalendarLoaded) {
     return (
       <div className="flex-1 flex flex-col justify-center items-center bg-[#FAF8F5] min-h-screen">
         <div className="w-6 h-6 border-2 border-brand-rust border-t-transparent rounded-full animate-spin mb-3" />
@@ -775,31 +988,62 @@ export default function Home() {
   return (
     <div className="w-full max-w-lg mx-auto bg-[#FAF8F5] min-h-screen flex flex-col shadow-sm border-x border-[#ECE6DD] relative">
       <header className="px-6 pt-10 pb-6 shrink-0 border-b border-[#F2ECE4]">
-        <h1 className="font-serif text-3xl font-bold tracking-tight text-brand-charcoal">
-          Thread Ledger
-        </h1>
-        <p className="mt-3.5 text-[15px] leading-relaxed text-brand-clay font-sans">
-          {activeDebts.length > 0 ? (
-            <>
-              Tracking {formatCurrency(totalOutstanding)} across {activeDebts.length}{" "}
-              {activeDebts.length === 1 ? "active customer" : "active customers"}.{" "}
-              {lowStockCount > 0 ? (
-                <span>
-                  {lowStockCount} inventory {lowStockCount === 1 ? "item is" : "items are"} at low stock.
-                </span>
+        <div className="flex items-start justify-between gap-4">
+          <div className="min-w-0 flex-1">
+            <h1 className="font-serif text-3xl font-bold tracking-tight text-brand-charcoal">
+              Thread Ledger
+            </h1>
+            <p className="mt-3.5 text-[15px] leading-relaxed text-brand-clay font-sans">
+              {activeDebts.length > 0 ? (
+                <>
+                  Tracking {formatCurrency(totalOutstanding)} across {activeDebts.length}{" "}
+                  {activeDebts.length === 1 ? "active customer" : "active customers"}.{" "}
+                  {lowStockCount > 0 ? (
+                    <span>
+                      {lowStockCount} inventory {lowStockCount === 1 ? "item is" : "items are"} at low stock.
+                    </span>
+                  ) : (
+                    "Stock levels are stable."
+                  )}
+                </>
               ) : (
-                "Stock levels are stable."
+                <>No outstanding balances right now. Keep logging activity to maintain your running ledger.</>
               )}
-            </>
-          ) : (
-            <>No outstanding balances right now. Keep logging activity to maintain your running ledger.</>
-          )}
-        </p>
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setIsProfileOpen(true);
+              setProfileSection(null);
+            }}
+            className="relative shrink-0 w-11 h-11 rounded-full bg-brand-paper border border-[#ECE6DD] flex items-center justify-center hover:bg-brand-cream transition-colors cursor-pointer mt-1"
+            aria-label="Open profile menu"
+          >
+            <User className="w-5 h-5 text-brand-charcoal" />
+            {appNotifications.length > 0 && (
+              <span className="absolute -top-0.5 -right-0.5 w-4 h-4 rounded-full bg-brand-rust text-white text-[9px] font-bold flex items-center justify-center">
+                {appNotifications.length > 9 ? "9+" : appNotifications.length}
+              </span>
+            )}
+          </button>
+        </div>
       </header>
+
+      {showReminderBanner && (
+        <ReminderBanner
+          count={unpostedContentCount}
+          onShow={() => openProfileSection("calendar", true)}
+          onDismiss={() => {
+            setShowReminderBanner(false);
+            handleUpdateSettings({ lastReminderDismissedAt: new Date().toISOString() });
+          }}
+        />
+      )}
 
       <div className="px-6 py-4 bg-brand-paper/50 backdrop-blur-md sticky top-0 z-20 border-b border-[#F2ECE4] space-y-3">
 
-        {activeTab !== "summary" && (
+        {activeTab !== "expenses" && (
           <div className="relative">
             <Search className="absolute left-3 top-2.5 w-4 h-4 text-brand-clay/60" />
             <input
@@ -965,19 +1209,11 @@ export default function Home() {
           )
         )}
 
-        {activeTab === "summary" && (
-          <SummaryView
-            formatCurrency={formatCurrency}
-            totals={summaryTotals}
-            categoryBreakdown={categoryBreakdown}
-            expenses={expenses}
-          />
-        )}
       </main>
 
       {/* Bottom Navigation */}
       <nav className="fixed bottom-0 left-0 right-0 z-40 max-w-lg mx-auto bg-brand-paper border-t border-[#F2ECE4] px-3 py-3">
-        <div className="grid grid-cols-4 gap-2">
+        <div className="grid grid-cols-3 gap-2">
           <button
             onClick={() => {
               setActiveTab("ledger");
@@ -1019,20 +1255,6 @@ export default function Home() {
           >
             <Receipt className="w-4 h-4" />
             <span>Expenses</span>
-          </button>
-          <button
-            onClick={() => {
-              setActiveTab("summary");
-              setSearchQuery("");
-            }}
-            className={`py-3 text-[10px] font-semibold uppercase tracking-wider rounded-lg font-sans transition-all flex flex-col justify-center items-center gap-1.5 cursor-pointer ${
-              activeTab === "summary"
-                ? "bg-brand-charcoal text-white"
-                : "text-brand-clay hover:text-brand-charcoal"
-            }`}
-          >
-            <ScrollText className="w-4 h-4" />
-            <span>Summary</span>
           </button>
         </div>
       </nav>
@@ -1110,6 +1332,43 @@ export default function Home() {
           onSubmit={handleLogExpense}
         />
       )}
+
+      <ProfileDrawer
+        isOpen={isProfileOpen}
+        onClose={() => {
+          setIsProfileOpen(false);
+          setProfileSection(null);
+          setCalendarFilterUnposted(false);
+        }}
+        activeSection={profileSection}
+        onSectionChange={(section) => {
+          setProfileSection(section);
+          if (section !== "calendar") setCalendarFilterUnposted(false);
+        }}
+        onBackToMenu={() => {
+          setProfileSection(null);
+          setCalendarFilterUnposted(false);
+        }}
+        formatCurrency={formatCurrency}
+        summaryTotals={summaryTotals}
+        categoryBreakdown={categoryBreakdown}
+        expenses={expenses}
+        calendarEntries={calendarEntries}
+        inventory={inventory}
+        onAddEntry={handleAddCalendarEntry}
+        onUpdateEntry={handleUpdateCalendarEntry}
+        onDeleteEntry={handleDeleteCalendarEntry}
+        onMarkPosted={handleMarkPosted}
+        notifications={appNotifications}
+        settings={settings}
+        onUpdateSettings={handleUpdateSettings}
+        onEnablePush={handleEnablePush}
+        onDisablePush={handleDisablePush}
+        pushSupported={isPushSupported()}
+        pushPermission={pushPermission}
+        onNavigateToUnposted={navigateToUnposted}
+        calendarFilterUnposted={calendarFilterUnposted}
+      />
     </div>
   );
 }

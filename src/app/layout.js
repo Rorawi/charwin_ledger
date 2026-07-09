@@ -14,12 +14,12 @@ const plusJakarta = Plus_Jakarta_Sans({
 });
 
 export const metadata = {
-  title: "Charwin Ledger",
+  title: "Thread Ledger",
   description: "A beautiful, personal ledger for clothing line credit and inventory.",
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
-    title: "Charwin Ledger",
+    title: "Thread Ledger",
   },
 };
 
