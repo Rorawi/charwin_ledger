@@ -169,7 +169,11 @@ export default function SwipeableDebtItem({ debt, onSettle, onTap }) {
             {formatDate(debt.date)}
           </span>
           <span className="text-lg font-serif font-bold text-brand-charcoal">
-            {formatCurrency(debt.amountOwed)}
+            {formatCurrency(
+              debt.status === "settled" 
+                ? (debt.cashCollected > 0 ? debt.cashCollected : (debt.purchases?.reduce((s, p) => s + p.finalAmount, 0) || 0)) 
+                : debt.amountOwed
+            )}
           </span>
           {isPartiallyPaid && (
             <span className="text-[10px] text-brand-rust font-sans mt-1 bg-[#FAF1EE] px-1.5 py-0.5 rounded-full border border-[#F2DDD7]">

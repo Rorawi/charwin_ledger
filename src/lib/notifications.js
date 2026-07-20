@@ -51,8 +51,10 @@ export function deriveNotifications({
       notifications.push({
         id: `debt-${profile.id}`,
         type: "debt",
+        customerName: profile.name,
         message: `${profile.name} still owes ${formatCurrency(profile.amountOwed)}.`,
-        subtext: `Outstanding since ${new Date(oldestUnpaid.date).toLocaleDateString("en-US", { month: "short", day: "numeric" })}.`,
+        subtext: `Outstanding since ${new Date(oldestUnpaid.date).toLocaleDateString("en-US", { month: "short", day: "numeric" })}. Tap to copy reminder.`,
+        copyText: `Hi ${profile.name}, this is a gentle reminder that you have an outstanding balance of ${formatCurrency(profile.amountOwed)} for your purchases at Thread Ledger. Please let me know when you can settle this. Thank you!`,
       });
     }
   }
@@ -80,6 +82,9 @@ async function syncSettingsToDb(settings) {
         value: {
           contentAgeThresholdDays: settings.contentAgeThresholdDays,
           debtAgeThresholdDays: settings.debtAgeThresholdDays,
+          reminderFrequencyDays: settings.reminderFrequencyDays,
+          pushEnabled: settings.pushEnabled,
+          pushPermissionRequested: settings.pushPermissionRequested,
         },
       },
       { onConflict: "key" }

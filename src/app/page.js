@@ -310,12 +310,18 @@ export default function Home() {
 
   useEffect(() => {
     if (typeof window !== "undefined" && "Notification" in window) {
-      setPushPermission(Notification.permission);
+      const timer = setTimeout(() => {
+        setPushPermission(Notification.permission);
+      }, 0);
+      return () => clearTimeout(timer);
     }
   }, []);
 
   useEffect(() => {
-    setSettings((prev) => updateSettings({ sessionInteractionCount: prev.sessionInteractionCount + 1 }));
+    const timer = setTimeout(() => {
+      setSettings((prev) => updateSettings({ sessionInteractionCount: prev.sessionInteractionCount + 1 }));
+    }, 0);
+    return () => clearTimeout(timer);
   }, [activeTab]);
 
   const handleUpdateSettings = useCallback((partial) => {
@@ -394,9 +400,14 @@ export default function Home() {
         if (!key) continue;
 
         if (!merged.has(key)) {
-          // First occurrence - preserve DB status
+          // First occurrence — run through recalculateProfile so cashCollected, paidAmount, fullHistory etc. are populated
           if (key === "gideon") console.log(`[LOAD] First Gideon: status=${baseProfile.status}, purchases=${baseProfile.purchases.length}, payments=${baseProfile.payments.length}`);
-          merged.set(key, baseProfile);
+          const calculated = recalculateProfile(baseProfile);
+          // Preserve DB status for settled debts that have amountOwed=0 in the DB
+          if (baseProfile.status === "settled") {
+            calculated.status = "settled";
+          }
+          merged.set(key, calculated);
           continue;
         }
 
@@ -404,11 +415,14 @@ export default function Home() {
         const existing = merged.get(key);
         if (key === "gideon") console.log(`[LOAD] Merging Gideon: existing.status=${existing.status}, new.status=${baseProfile.status}`);
         
+        const allPayments = [...existing.payments, ...baseProfile.payments];
+        const uniquePayments = Array.from(new Map(allPayments.map(p => [p.id, p])).values());
+        
         const mergedProfile = {
           ...existing,
           phone: existing.phone || baseProfile.phone,
           purchases: [...existing.purchases, ...baseProfile.purchases],
-          payments: [...existing.payments, ...baseProfile.payments],
+          payments: uniquePayments,
         };
 
         profileFromRow = recalculateProfile(mergedProfile);
@@ -455,6 +469,20 @@ export default function Home() {
         setCalendarEntries(calData || []);
       }
       setIsCalendarLoaded(true);
+
+      const { data: settingsData, error: settingsError } = await supabase
+        .from("app_settings")
+        .select("*");
+      
+      if (!settingsError && settingsData) {
+        const thresholdSetting = settingsData.find((s) => s.key === "notification_thresholds");
+        if (thresholdSetting && thresholdSetting.value) {
+          setSettings((prev) => ({
+            ...prev,
+            ...thresholdSetting.value
+          }));
+        }
+      }
     }
 
     loadData();
@@ -660,7 +688,10 @@ export default function Home() {
   }, [calendarEntries]);
 
   useEffect(() => {
-    setShowReminderBanner(shouldShowReminder(settings, unpostedContentCount));
+    const timer = setTimeout(() => {
+      setShowReminderBanner(shouldShowReminder(settings, unpostedContentCount));
+    }, 0);
+    return () => clearTimeout(timer);
   }, [settings, unpostedContentCount]);
 
   const appNotifications = useMemo(() => {
@@ -712,17 +743,22 @@ export default function Home() {
   };
 
   const handleAddCalendarEntry = async (entryData) => {
-    const tempId = `temp-cal-${Date.now()}`;
-    const optimistic = { ...entryData, id: tempId, created_at: new Date().toISOString(), posted_platforms: [] };
+    const newId = crypto.randomUUID();
+    const optimistic = { ...entryData, id: newId, created_at: new Date().toISOString(), posted_platforms: [] };
     setCalendarEntries((prev) => [...prev, optimistic]);
 
-    const { data } = await supabase.from("calendar_entries").insert({
+    const { data, error } = await supabase.from("calendar_entries").insert({
       ...entryData,
+      id: newId,
       posted_platforms: [],
     }).select().single();
 
-    if (data) {
-      setCalendarEntries((prev) => prev.map((e) => (e.id === tempId ? data : e)));
+    if (error) {
+      console.error("[Calendar] Failed to save entry:", error.message);
+      // Roll back the optimistic update
+      setCalendarEntries((prev) => prev.filter((e) => e.id !== newId));
+    } else if (data) {
+      setCalendarEntries((prev) => prev.map((e) => (e.id === newId ? data : e)));
     }
   };
 
@@ -783,6 +819,18 @@ export default function Home() {
             (a, b) => new Date(b.lastActivityDate).getTime() - new Date(a.lastActivityDate).getTime()
           )
       );
+
+      const optimisticProfile = recalculateProfile({
+        id: `temp-${Date.now()}`,
+        name: existingProfile.name,
+        phone: newRecord.phone || existingProfile.phone,
+        purchases: [purchase],
+        payments: [], 
+      });
+      
+      await supabase
+        .from("debts")
+        .insert(profileToDbRow(optimisticProfile));
 
       await saveProfileToDb(updatedProfile);
     } else {

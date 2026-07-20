@@ -1,6 +1,7 @@
 "use client";
 
-import { Bell, Package, Users, Clock } from "lucide-react";
+import { useState } from "react";
+import { Bell, Package, Users, Clock, Check } from "lucide-react";
 
 const ICONS = {
   content: Package,
@@ -19,6 +20,8 @@ export default function NotificationsView({
   pushPermission,
   onNavigateToUnposted,
 }) {
+  const [copiedId, setCopiedId] = useState(null);
+
   const handlePushToggle = async () => {
     if (settings.pushEnabled) {
       await onDisablePush();
@@ -41,23 +44,37 @@ export default function NotificationsView({
           <div className="space-y-2">
             {notifications.map((n) => {
               const Icon = ICONS[n.type] || Bell;
+              const isCopied = copiedId === n.id;
+
+              const handleClick = () => {
+                if (n.copyText) {
+                  navigator.clipboard.writeText(n.copyText);
+                  setCopiedId(n.id);
+                  setTimeout(() => setCopiedId(null), 2000);
+                } else if (n.action) {
+                  n.action();
+                }
+              };
+
               return (
                 <button
                   key={n.id}
                   type="button"
-                  onClick={n.action || undefined}
-                  className={`w-full text-left bg-brand-paper rounded-xl border border-[#ECE6DD] px-4 py-3.5 flex gap-3 ${
-                    n.action ? "hover:bg-brand-cream cursor-pointer" : ""
-                  } transition-colors`}
+                  onClick={handleClick}
+                  className={`w-full text-left bg-brand-paper rounded-xl border transition-colors px-4 py-3.5 flex gap-3 ${
+                    isCopied
+                      ? "border-brand-sage bg-brand-sage/5"
+                      : (n.action || n.copyText) ? "border-[#ECE6DD] hover:bg-brand-cream cursor-pointer" : "border-[#ECE6DD]"
+                  }`}
                 >
-                  <div className="w-9 h-9 rounded-full bg-brand-cream border border-[#ECE6DD] flex items-center justify-center shrink-0">
-                    <Icon className="w-4 h-4 text-brand-clay" />
+                  <div className={`w-9 h-9 rounded-full border flex items-center justify-center shrink-0 transition-colors ${isCopied ? "bg-brand-sage/10 border-brand-sage" : "bg-brand-cream border-[#ECE6DD]"}`}>
+                    {isCopied ? <Check className="w-4 h-4 text-brand-sage" /> : <Icon className="w-4 h-4 text-brand-clay" />}
                   </div>
                   <div className="min-w-0">
                     <p className="text-sm text-brand-charcoal font-sans leading-relaxed">{n.message}</p>
-                    {n.subtext && (
-                      <p className="text-[11px] text-brand-clay font-sans mt-0.5">{n.subtext}</p>
-                    )}
+                    <p className="text-[11px] font-sans mt-0.5 transition-colors" style={{ color: isCopied ? "#8E9A82" : "#8B7D6F" }}>
+                      {isCopied ? "Reminder copied to clipboard!" : n.subtext}
+                    </p>
                   </div>
                 </button>
               );

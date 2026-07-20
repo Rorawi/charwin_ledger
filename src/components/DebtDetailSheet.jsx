@@ -32,20 +32,41 @@ export default function DebtDetailSheet({ debt, onClose, onAddPayment, onSettle,
     });
   };
 
+  const purchases = debt?.purchases || [];
+
+  const fullHistory = useMemo(() => {
+    if (debt?.fullHistory) return debt.fullHistory;
+    const payments = debt?.payments || [];
+    return [
+      ...purchases.map((purchase) => ({
+        id: `purchase-${purchase.id}`,
+        kind: "purchase",
+        date: purchase.date,
+        purchase,
+      })),
+      ...payments.map((payment) => ({
+        id: `payment-${payment.id}`,
+        kind: payment.type,
+        date: payment.date,
+        payment,
+      })),
+    ].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  }, [debt, purchases]);
+
   const activeTransactions = useMemo(
-    () => (debt?.purchases || []).filter((purchase) => purchase.remainingAmount > 0),
-    [debt]
+    () => purchases.filter((purchase) => purchase.remainingAmount > 0),
+    [purchases]
   );
 
-  const totalInvoiced = (debt?.purchases || []).reduce((sum, purchase) => sum + purchase.finalAmount, 0);
-  const totalPaid = (debt?.purchases || []).reduce((sum, purchase) => sum + purchase.paidAmount, 0);
+  const totalInvoiced = purchases.reduce((sum, purchase) => sum + purchase.finalAmount, 0);
+  const totalPaid = purchases.reduce((sum, purchase) => sum + purchase.paidAmount, 0);
   const isSettled = debt?.status === "settled";
 
   const maxAllowed = useMemo(() => {
     if (targetTransactionId === "total") return debt.amountOwed;
-    const target = (debt?.purchases || []).find((purchase) => purchase.id === targetTransactionId);
+    const target = purchases.find((purchase) => purchase.id === targetTransactionId);
     return target ? target.remainingAmount : debt?.amountOwed || 0;
-  }, [debt, targetTransactionId]);
+  }, [debt, purchases, targetTransactionId]);
 
   if (!debt) return null;
 
@@ -141,9 +162,9 @@ export default function DebtDetailSheet({ debt, onClose, onAddPayment, onSettle,
               <h4 className="text-xs uppercase tracking-wider font-semibold text-brand-clay mb-2 font-sans">
                 Purchase History
               </h4>
-              {debt.purchases.length > 0 ? (
+              {(purchases || []).length > 0 ? (
                 <div className="space-y-3">
-                  {debt.purchases.map((purchase) => (
+                  {(purchases || []).map((purchase) => (
                     <div key={purchase.id} className="bg-brand-cream p-3.5 rounded-xl border border-[#ECE6DD]">
                       <div className="flex justify-between items-start gap-2 mb-2">
                         <div>
@@ -189,7 +210,7 @@ export default function DebtDetailSheet({ debt, onClose, onAddPayment, onSettle,
                       </div>
 
                       <ul className="space-y-1.5">
-                        {purchase.items.map((item, index) => (
+                        {(purchase.items || []).map((item, index) => (
                           <li
                             key={`${purchase.id}-${index}`}
                             className="flex justify-between items-center text-xs text-brand-charcoal font-sans"
@@ -203,7 +224,7 @@ export default function DebtDetailSheet({ debt, onClose, onAddPayment, onSettle,
                         ))}
                       </ul>
 
-                      {purchase.notes && (
+                      {typeof purchase.notes === "string" && purchase.notes.trim() !== "" && (
                         <p className="text-[11px] text-brand-clay font-sans italic mt-2">&ldquo;{purchase.notes}&rdquo;</p>
                       )}
                     </div>
@@ -214,13 +235,13 @@ export default function DebtDetailSheet({ debt, onClose, onAddPayment, onSettle,
               )}
             </div>
 
-            {debt.fullHistory.length > 0 && (
+            {(fullHistory || []).length > 0 && (
               <div className="border-t border-[#ECE6DD] pt-4">
                 <h4 className="text-xs uppercase tracking-wider font-semibold text-brand-clay mb-2.5 font-sans">
                   Running History
                 </h4>
                 <div className="space-y-2">
-                  {debt.fullHistory.map((entry) => (
+                  {(fullHistory || []).map((entry) => (
                     <div
                       key={entry.id}
                       className="flex justify-between items-start text-xs bg-brand-cream/60 p-3 rounded-lg border border-[#F2ECE4] font-sans"
@@ -269,7 +290,7 @@ export default function DebtDetailSheet({ debt, onClose, onAddPayment, onSettle,
               </div>
             )}
 
-            {debt.purchases.length > 0 && (
+            {(purchases || []).length > 0 && (
               <div className="border-t border-[#ECE6DD] pt-4 flex gap-2.5 items-start">
                 <Calendar className="w-4 h-4 text-brand-clay mt-0.5 shrink-0" />
                 <div>
@@ -277,7 +298,7 @@ export default function DebtDetailSheet({ debt, onClose, onAddPayment, onSettle,
                     First Purchase Date
                   </span>
                   <span className="text-sm text-brand-charcoal font-sans">
-                    {formatDate(debt.purchases.slice().sort((a, b) => new Date(a.date) - new Date(b.date))[0].date)}
+                    {formatDate((purchases || []).slice().sort((a, b) => new Date(a.date) - new Date(b.date))[0]?.date)}
                   </span>
                 </div>
               </div>
@@ -323,7 +344,7 @@ export default function DebtDetailSheet({ debt, onClose, onAddPayment, onSettle,
                     className="w-full bg-brand-paper text-xs text-brand-charcoal rounded-lg border border-[#ECE6DD] py-2 px-2.5 focus:outline-none focus:border-brand-rust font-sans cursor-pointer"
                   >
                     <option value="total">Apply to total outstanding</option>
-                    {activeTransactions.map((purchase) => (
+                    {(activeTransactions || []).map((purchase) => (
                       <option key={purchase.id} value={purchase.id}>
                         {new Date(purchase.date).toLocaleDateString("en-US", { month: "short", day: "numeric" })} • Remaining {currency(purchase.remainingAmount)}
                       </option>
